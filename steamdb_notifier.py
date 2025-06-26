@@ -5,8 +5,8 @@ from datetime import datetime
 from telegram import Bot
 
 # 配置
-TG_BOT_TOKEN = os.getenv("7856078836:AAEY62lIOshzytrgUQ0fyHAR-9f8afCP4-k")  # 从 GitHub Secrets 读取
-TG_CHAT_ID = os.getenv("-1002847434793")  # 从 GitHub Secrets 读取
+TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN")  # 从 GitHub Secrets 读取
+TG_CHAT_ID = os.getenv("TG_CHAT_ID")  # 从 GitHub Secrets 读取
 CONFIG_FILE = "games.json"
 
 
