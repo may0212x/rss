@@ -14,6 +14,20 @@ def extract_game_name(title):
     """从 RSS 标题提取游戏名（如 'xxx update for date' → 'xxx'）"""
     return title.split(" update for ")[0]
 
+def check_updates():
+    with open(CONFIG_FILE, "r") as f:
+        app_ids = json.load(f)
+    
+    bot = Bot(token=TG_BOT_TOKEN)
+    for app_id in app_ids:
+        rss_url = f"https://steamdb.info/api/PatchnotesRSS/?appid={app_id}"
+        feed = feedparser.parse(rss_url)
+        print(f"检查 AppID: {app_id}, RSS 条目数: {len(feed.entries)}")  # 调试日志
+        if feed.entries:
+            latest_entry = feed.entries[0]
+            print(f"最新条目: {latest_entry.title}")  # 调试日志
+            message = format_message(latest_entry, app_id)
+            bot.send_message(chat_id=TG_CHAT_ID, text=message)
 
 def format_message(entry, app_id):
     """格式化消息为 [GAME][AppID] 游戏名 (BuildID) 更新时间"""
