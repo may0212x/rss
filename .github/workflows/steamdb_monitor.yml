@@ -1,0 +1,25 @@
+name: SteamDB Monitor
+on:
+  schedule:
+    - cron: "0 * * * *"  # 每小时运行一次（UTC 时间）
+  workflow_dispatch:      # 支持手动触发
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run SteamDB Notifier
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}  # 需在仓库 Settings > Secrets 中配置
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python steamdb_notifier.py
