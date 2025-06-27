@@ -1,8 +1,14 @@
 name: SteamDB Monitor
 on:
   schedule:
-    - cron: "*/30 * * * *"
-  workflow_dispatch:
+    - cron: "*/30 * * * *"  # 自动模式（每30分钟）
+  workflow_dispatch:         # 手动触发
+    inputs:
+      force:
+        description: "强制重新推送所有更新"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   monitor:
@@ -10,15 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      # 使用新的缓存恢复方式
       - name: Restore cache
-        id: cache
         uses: actions/cache@v3
         with:
           path: steamdb_cache.json
           key: steamdb-${{ hashFiles('games.json') }}
-          restore-keys: |
-            steamdb-
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -26,18 +28,21 @@ jobs:
           python-version: "3.10"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install feedparser python-telegram-bot
 
       - name: Run monitor
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python steamdb_notifier.py
+        run: |
+          if ${{ inputs.force }}; then
+            python steamdb_notifier.py --force
+          else
+            python steamdb_notifier.py
+          fi
 
-      # 仅在缓存发生变化时保存
       - name: Save cache
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache@v3
+        uses: actions/cache/save@v3
         with:
           path: steamdb_cache.json
-          key: steamdb-${{ hashFiles('games.json') }}'games.json') }}
+          key: steamdb-${{ hashFiles('games.json') }}
