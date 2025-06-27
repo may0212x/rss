@@ -1,48 +1,29 @@
-name: SteamDB Monitor
+name: Steam Game Monitor
 on:
   schedule:
-    - cron: "*/30 * * * *"
-  workflow_dispatch:
-    inputs:
-      force:
-        description: "Force resend all updates"
-        required: false
-        type: boolean
-        default: false
+    - cron: "0 */6 * * *"  # 每6小时运行一次
+  workflow_dispatch:       # 允许手动触发
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
+    timeout-minutes: 30    # 超时设置
+    
     steps:
       - uses: actions/checkout@v4
       
-      - name: Restore cache
-        uses: actions/cache@v3
-        with:
-          path: steamdb_cache.json
-          key: steamdb-${{ hashFiles('games.json') }}
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
-
+          
       - name: Install dependencies
-        run: pip install feedparser python-telegram-bot
-
+        run: |
+          pip install -r requirements.txt
+          pip install steam python-telegram-bot
+          
       - name: Run monitor
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: |
-          if [[ "${{ github.event.inputs.force }}" == "true" ]]; then
-            python steamdb_notifier.py --force
-          else
-            python steamdb_notifier.py
-          fi
-
-      - name: Save cache
-        uses: actions/cache@v3
-        with:
-          path: steamdb_cache.json
-          key: steamdb-${{ hashFiles('games.json') }}
+        run: python steam_monitor.py
