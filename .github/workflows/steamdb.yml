@@ -1,8 +1,8 @@
 name: SteamDB Monitor
 on:
   schedule:
-    - cron: "*/30 * * * *"  # 每30分钟检查一次
-  workflow_dispatch:        # 支持手动触发
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
 
 jobs:
   monitor:
@@ -10,13 +10,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      # 恢复缓存（记录已推送的BuildID）
+      # 使用新的缓存恢复方式
       - name: Restore cache
+        id: cache
         uses: actions/cache@v3
         with:
           path: steamdb_cache.json
           key: steamdb-${{ hashFiles('games.json') }}
-          restore-keys: steamdb-
+          restore-keys: |
+            steamdb-
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -32,10 +34,10 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python steamdb_notifier.py
 
-      # 保存缓存（如果有新更新）
+      # 仅在缓存发生变化时保存
       - name: Save cache
-        if: always()
-        uses: actions/cache/save@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v3
         with:
           path: steamdb_cache.json
-          key: steamdb-${{ hashFiles('games.json') }}
+          key: steamdb-${{ hashFiles('games.json') }}'games.json') }}
