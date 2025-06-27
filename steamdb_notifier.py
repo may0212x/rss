@@ -73,16 +73,17 @@ async def check_updates():
                 new_updates.append({
                     "app_id": app_id,
                     "text": f"[GAME][{app_id}] {extract_game_name(entry.title)} ({build_id}) {pub_date.strftime('%Y/%m/%d %H:%M')}",
-                    "pub_date": pub_date.timestamp(),
-                    "build_id": build_id
+                    "pub_date": pub_date.timestamp()  # 使用时间戳便于排序
                 })
                 cache[str(app_id)] = build_id
 
     if new_updates:
+        # 关键修改：按时间戳升序排序（最早的在前，最新的在后）
         new_updates.sort(key=lambda x: x["pub_date"])
+        
         await send_split_messages(bot, new_updates)
         save_cache(cache)
-
+        
 if __name__ == "__main__":
     import asyncio
     asyncio.run(check_updates())
