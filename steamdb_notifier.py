@@ -2,6 +2,7 @@ import feedparser
 import json
 import os
 import sys
+import asyncio
 from datetime import datetime
 from telegram import Bot
 from telegram.constants import ParseMode
@@ -22,23 +23,39 @@ def load_game_list():
         return json.load(f)
 
 def load_cache():
-    """加载推送记录"""
+    """加载推送记录（确保结构完整）"""
+    default_cache = {"normal": {}, "force": {}}
     try:
         with open(CACHE_FILE, "r") as f:
-            return json.load(f)
+            cache = json.load(f)
+            # 合并现有缓存与默认结构
+            return {
+                "normal": {**default_cache["normal"], **cache.get("normal", {})},
+                "force": {**default_cache["force"], **cache.get("force", {})}
+            }
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"normal": {}, "force": {}}
+        return default_cache
 
 def save_cache(cache):
-    """保存推送记录"""
-    with open(f"{CACHE_FILE}.tmp", "w") as f:
-        json.dump(cache, f)
-    os.replace(f"{CACHE_FILE}.tmp", CACHE_FILE)
+    """原子化保存缓存"""
+    temp_file = f"{CACHE_FILE}.tmp"
+    with open(temp_file, "w") as f:
+        json.dump({
+            "normal": cache.get("normal", {}),
+            "force": cache.get("force", {})
+        }, f, indent=2)
+    os.replace(temp_file, CACHE_FILE)
 
 async def send_grouped_message(bot, updates):
     """发送合并消息"""
+    if not updates:
+        return
+    
+    # 按时间排序（最早的在前）
+    updates.sort(key=lambda x: x["pub_date"])
+    
     message = "```\n本次更新游戏列表\n"
-    for update in sorted(updates, key=lambda x: x["pub_date"]):
+    for update in updates:
         message += f"{update['text']}\n"
     message += "```"
     
@@ -57,32 +74,36 @@ async def check_updates(force_resend=False):
     cache_key = "force" if force_resend else "normal"
 
     for app_id in app_ids:
-        rss_url = f"https://steamdb.info/api/PatchnotesRSS/?appid={app_id}"
-        feed = feedparser.parse(rss_url)
-        
-        if feed.entries:
-            entry = feed.entries[0]
-            build_id = entry.guid.split("#")[-1]
+        try:
+            rss_url = f"https://steamdb.info/api/PatchnotesRSS/?appid={app_id}"
+            feed = feedparser.parse(rss_url)
             
-            # 强制模式或检测到新版本
-            if force_resend or cache[cache_key].get(str(app_id)) != build_id:
-                pub_date = datetime.strptime(entry.published, "%a, %d %b %Y %H:%M:%S %z")
-                new_updates.append({
-                    "app_id": app_id,
-                    "text": f"[GAME][{app_id}] {extract_game_name(entry.title)} ({build_id}) {pub_date.strftime('%Y/%m/%d %H:%M')}",
-                    "pub_date": pub_date.timestamp(),
-                    "build_id": build_id
-                })
-                cache[cache_key][str(app_id)] = build_id
+            if feed.entries:
+                entry = feed.entries[0]
+                build_id = entry.guid.split("#")[-1]
+                
+                # 强制模式或检测到新版本
+                if force_resend or cache[cache_key].get(str(app_id)) != build_id:
+                    pub_date = datetime.strptime(
+                        entry.published, 
+                        "%a, %d %b %Y %H:%M:%S %z"
+                    )
+                    new_updates.append({
+                        "app_id": app_id,
+                        "text": f"[GAME][{app_id}] {extract_game_name(entry.title)} ({build_id}) {pub_date.strftime('%Y/%m/%d %H:%M')}",
+                        "pub_date": pub_date.timestamp(),
+                        "build_id": build_id
+                    })
+                    cache[cache_key][str(app_id)] = build_id
+                    
+        except Exception as e:
+            print(f"处理AppID {app_id}时出错: {str(e)}")
+            continue
 
     if new_updates:
         await send_grouped_message(bot, new_updates)
         save_cache(cache)
 
 if __name__ == "__main__":
-    import asyncio
-    force_mode = "--force" in sys.argv  # 通过命令行参数启用强制模式
+    force_mode = "--force" in sys.argv
     asyncio.run(check_updates(force_resend=force_mode))
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(check_updates())
