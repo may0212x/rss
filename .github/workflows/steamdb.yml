@@ -1,11 +1,11 @@
 name: SteamDB Monitor
 on:
   schedule:
-    - cron: "*/30 * * * *"  # 每30分钟检查一次
+    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       force:
-        description: "强制重新推送所有更新"
+        description: "Force resend all updates"
         required: false
         type: boolean
         default: false
@@ -13,18 +13,14 @@ on:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       
       - name: Restore cache
-        id: cache
         uses: actions/cache@v3
         with:
           path: steamdb_cache.json
           key: steamdb-${{ hashFiles('games.json') }}
-          restore-keys: |
-            steamdb-
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -39,14 +35,13 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+          if [[ "${{ github.event.inputs.force }}" == "true" ]]; then
             python steamdb_notifier.py --force
           else
             python steamdb_notifier.py
           fi
 
       - name: Save cache
-        if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache@v3
         with:
           path: steamdb_cache.json
