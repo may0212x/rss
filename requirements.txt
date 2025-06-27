@@ -1,3 +1,2 @@
-steamit2>=0.1.0
+steam>=1.4.0
 python-telegram-bot>=20.0
-requests>=2.28.0
