@@ -11,7 +11,7 @@ from telegram.error import TelegramError
 # 配置常量
 CACHE_FILE = "steamdb_cache.json"
 CONFIG_FILE = "games.json"
-MAX_MESSAGE_LENGTH = 4000  # 预留空间给Markdown格式字符
+MAX_MESSAGE_LENGTH = 3000  # 预留空间给Markdown格式字符
 
 
 def extract_game_name(title):
