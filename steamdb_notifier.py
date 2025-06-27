@@ -7,19 +7,17 @@ from telegram.constants import ParseMode
 
 # 配置常量
 CACHE_FILE = "steamdb_cache.json"
+MAX_MESSAGE_LENGTH = 2000  # 预留空间给Markdown格式字符
 
 def extract_game_name(title):
-    """从标题提取纯净游戏名（处理'中文/英文'格式）"""
     clean_title = title.split(" update for ")[0]
     return clean_title.split("/")[0] if "/" in clean_title else clean_title
 
 def load_game_list():
-    """加载要监控的游戏列表"""
     with open("games.json", "r") as f:
         return json.load(f)
 
 def load_cache():
-    """读取已推送记录"""
     try:
         with open(CACHE_FILE, "r") as f:
             return json.load(f)
@@ -27,12 +25,36 @@ def load_cache():
         return {}
 
 def save_cache(cache):
-    """保存推送记录"""
     with open(CACHE_FILE, "w") as f:
         json.dump(cache, f)
 
+async def send_split_messages(bot, updates):
+    """分段发送超长消息"""
+    header = "```\n本次更新游戏列表\n"
+    footer = "\n```"
+    chunk = header
+    separator = "\n"
+    
+    for update in updates:
+        new_line = update["text"] + separator
+        if len(chunk) + len(new_line) + len(footer) > MAX_MESSAGE_LENGTH:
+            await bot.send_message(
+                chat_id=os.getenv("TG_CHAT_ID"),
+                text=chunk + footer,
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+            chunk = header + new_line
+        else:
+            chunk += new_line
+    
+    if chunk != header:  # 发送剩余内容
+        await bot.send_message(
+            chat_id=os.getenv("TG_CHAT_ID"),
+            text=chunk + footer,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+
 async def check_updates():
-    """检查更新并发送通知"""
     bot = Bot(token=os.getenv("TG_BOT_TOKEN"))
     app_ids = load_game_list()
     cache = load_cache()
@@ -46,7 +68,6 @@ async def check_updates():
             entry = feed.entries[0]
             build_id = entry.guid.split("#")[-1]
             
-            # 如果是新BuildID
             if cache.get(str(app_id)) != build_id:
                 pub_date = datetime.strptime(entry.published, "%a, %d %b %Y %H:%M:%S %z")
                 new_updates.append({
@@ -55,22 +76,11 @@ async def check_updates():
                     "pub_date": pub_date.timestamp(),
                     "build_id": build_id
                 })
-                cache[str(app_id)] = build_id  # 更新缓存
+                cache[str(app_id)] = build_id
 
     if new_updates:
-        # 按时间排序（最早的在前，最新的在后）
         new_updates.sort(key=lambda x: x["pub_date"])
-        
-        # 构建消息（Markdown代码块实现黑底效果）
-        message = "```\n本次更新游戏列表\n" + \
-                 "\n".join([u["text"] for u in new_updates]) + \
-                 "\n```"
-        
-        await bot.send_message(
-            chat_id=os.getenv("TG_CHAT_ID"),
-            text=message,
-            parse_mode=ParseMode.MARKDOWN_V2
-        )
+        await send_split_messages(bot, new_updates)
         save_cache(cache)
 
 if __name__ == "__main__":
