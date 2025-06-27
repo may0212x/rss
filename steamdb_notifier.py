@@ -10,7 +10,7 @@ from telegram.constants import ParseMode
 # 配置常量
 CACHE_FILE = "steamdb_cache.json"
 CONFIG_FILE = "games.json"
-MAX_MESSAGE_LENGTH = 4000
+MAX_MESSAGE_LENGTH = 2000
 
 def extract_game_name(title):
     """智能处理游戏名称"""
