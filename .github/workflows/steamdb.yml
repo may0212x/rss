@@ -1,41 +1,36 @@
-name: SteamDB Monitor
+name: Mass SteamDB Monitor
 on:
   schedule:
-    - cron: "*/30 * * * *"  # 每30分钟检查一次
-  workflow_dispatch:        # 支持手动触发
+    - cron: "*/30 * * * *"  # 每30分钟运行一次
+  workflow_dispatch:
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        shard: [0, 1, 2, 3, 4]  # 5个分片
     steps:
       - uses: actions/checkout@v4
       
-      # 恢复缓存（记录已推送的BuildID）
-      - name: Restore cache
-        uses: actions/cache@v3
-        with:
-          path: steamdb_cache.json
-          key: steamdb-${{ hashFiles('games.json') }}
-          restore-keys: steamdb-
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install aiohttp feedparser python-telegram-bot tenacity
 
-      - name: Run monitor
+      - name: Run monitor shard
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python steamdb_notifier.py
+          SHARD_ID: ${{ matrix.shard }}
+          TOTAL_SHARDS: 5
+        run: python optimized_monitor.py
 
-      # 保存缓存（如果有新更新）
-      - name: Save cache
-        if: always()
-        uses: actions/cache/save@v3
+      - name: Upload cache
+        uses: actions/upload-artifact@v3
         with:
+          name: shard-${{ matrix.shard }}-cache
           path: steamdb_cache.json
-          key: steamdb-${{ hashFiles('games.json') }}
