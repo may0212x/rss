@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import feedparser
 import json
 import os
@@ -11,8 +12,9 @@ from telegram.error import TelegramError
 # 配置常量
 CACHE_FILE = "steamdb_cache.json"
 CONFIG_FILE = "games.json"
-MAX_MESSAGE_LENGTH = 3000  # 预留空间给Markdown格式字符
-
+MAX_MESSAGE_LENGTH = 4000  # 预留空间给Markdown格式字符
+REQUEST_TIMEOUT = 10       # 单个请求超时时间(秒)
+RETRY_DELAY = 5            # 请求失败重试间隔
 
 def extract_game_name(title):
     """智能处理游戏名称（处理'中文/英文'格式）"""
@@ -25,7 +27,7 @@ def load_game_list():
         with open(CONFIG_FILE, "r") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"加载游戏列表失败: {str(e)}")
+        print(f"❌ 加载游戏列表失败: {str(e)}")
         return []
 
 def load_cache():
@@ -34,12 +36,13 @@ def load_cache():
     try:
         with open(CACHE_FILE, "r") as f:
             cache = json.load(f)
+            # 合并现有缓存与默认结构
             return {
                 "normal": {**default_cache["normal"], **cache.get("normal", {})},
                 "force": {**default_cache["force"], **cache.get("force", {})}
             }
     except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"加载缓存失败，使用默认缓存: {str(e)}")
+        print(f"⚠️ 加载缓存失败，使用默认缓存: {str(e)}")
         return default_cache
 
 def save_cache(cache):
@@ -53,7 +56,7 @@ def save_cache(cache):
             }, f, indent=2)
         os.replace(temp_file, CACHE_FILE)
     except Exception as e:
-        print(f"保存缓存失败: {str(e)}")
+        print(f"❌ 保存缓存失败: {str(e)}")
         if os.path.exists(temp_file):
             os.remove(temp_file)
 
@@ -67,16 +70,16 @@ async def send_message_safe(bot, text):
         )
         return True
     except TelegramError as e:
-        print(f"发送消息失败: {str(e)}")
+        print(f"❌ 发送消息失败: {str(e)}")
         return False
     except Exception as e:
-        print(f"未知发送错误: {str(e)}")
+        print(f"❌ 未知发送错误: {str(e)}")
         return False
 
 async def send_grouped_message(bot, updates):
     """分段发送消息（自动处理长度限制）"""
     if not updates:
-        print("没有新更新需要发送")
+        print("ℹ️ 没有新更新需要发送")
         return
     
     # 按时间排序（最早的在前）
@@ -84,51 +87,57 @@ async def send_grouped_message(bot, updates):
     
     # 初始化消息块
     chunks = []
-    current_chunk = "```\n本次更新游戏列表\n"
+    current_chunk = "```\n📢 本次更新游戏列表\n────────────────────\n"
+    chunk_size = len(current_chunk)
     
     for update in updates:
         line = f"{update['text']}\n"
+        line_size = len(line)
         
         # 检查是否超出长度限制（预留代码块关闭标记空间）
-        if len(current_chunk) + len(line) + 3 > MAX_MESSAGE_LENGTH:
+        if chunk_size + line_size + 3 > MAX_MESSAGE_LENGTH:
             chunks.append(current_chunk + "```")
-            current_chunk = "```\n本次更新游戏列表（续）\n"
+            current_chunk = "```\n📢 本次更新游戏列表（续）\n────────────────────\n"
+            chunk_size = len(current_chunk)
         
         current_chunk += line
+        chunk_size += line_size
     
     # 添加最后一个块
-    if len(current_chunk) > len("```\n本次更新游戏列表\n"):
+    if len(current_chunk) > len("```\n📢 本次更新游戏列表\n────────────────────\n"):
         chunks.append(current_chunk + "```")
     
     # 发送所有消息块
     for i, chunk in enumerate(chunks, 1):
         success = await send_message_safe(bot, chunk)
         if not success and i < len(chunks):
-            await asyncio.sleep(2)  # 失败后延迟重试
+            await asyncio.sleep(RETRY_DELAY)  # 失败后延迟重试
 
 async def check_updates(force_resend=False):
     """检查更新核心逻辑"""
+    print(f"\n{'🔄 强制检查模式' if force_resend else '🔍 普通检查模式'}")
+    
     try:
         bot = Bot(token=os.getenv("TG_BOT_TOKEN"))
         app_ids = load_game_list()
         if not app_ids:
-            print("游戏列表为空，请检查games.json")
+            print("❌ 游戏列表为空，请检查games.json")
             return
             
         cache = load_cache()
         new_updates = []
         cache_key = "force" if force_resend else "normal"
         
-        print(f"开始检查 {len(app_ids)} 个游戏（模式: {'强制' if force_resend else '普通'}）")
+        print(f"📋 共需检查 {len(app_ids)} 个游戏")
         
         for app_id in app_ids:
             try:
                 rss_url = f"https://steamdb.info/api/PatchnotesRSS/?appid={app_id}"
-                print(f"正在检查 AppID: {app_id}")
+                print(f"🔎 正在检查 AppID: {app_id}...")
                 
                 feed = feedparser.parse(rss_url)
                 if not feed.entries:
-                    print(f"AppID {app_id} 无更新记录")
+                    print(f"   ⚠️ 无更新记录")
                     continue
                 
                 entry = feed.entries[0]
@@ -148,33 +157,29 @@ async def check_updates(force_resend=False):
                         "build_id": build_id
                     })
                     cache[cache_key][str(app_id)] = build_id
-                    print(f"发现新更新: {app_id} (BuildID: {build_id})")
+                    print(f"   ✅ 发现新更新 (BuildID: {build_id})")
                 else:
-                    print(f"无新更新: {app_id} (已缓存: {cached_id})")
+                    print(f"   ✔️ 无新更新 (已缓存: {cached_id})")
                     
             except Exception as e:
-                print(f"处理 AppID {app_id} 时出错: {str(e)}")
+                print(f"   ❌ 处理出错: {str(e)}")
                 continue
         
         if new_updates:
-            print(f"准备发送 {len(new_updates)} 条更新...")
+            print(f"\n📨 准备发送 {len(new_updates)} 条更新...")
             await send_grouped_message(bot, new_updates)
             save_cache(cache)
-            print("更新发送完成")
+            print("🎉 更新发送完成")
         else:
-            print("没有发现新更新")
+            print("\nℹ️ 没有发现新更新")
             
     except Exception as e:
-        print(f"全局错误: {str(e)}")
+        print(f"\n❌ 全局错误: {str(e)}")
         raise
 
 if __name__ == "__main__":
     force_mode = "--force" in sys.argv
-    print(f"启动模式: {'强制检查' if force_mode else '普通检查'}")
-    asyncio.run(check_updates(force_resend=force_mode))
-        await send_grouped_message(bot, new_updates)
-        save_cache(cache)
-
-if __name__ == "__main__":
-    force_mode = "--force" in sys.argv
+    print("="*50)
+    print("SteamDB 游戏更新监控系统 v2.1")
+    print("="*50)
     asyncio.run(check_updates(force_resend=force_mode))
