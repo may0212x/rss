@@ -92,6 +92,10 @@ def send_telegram_message(message):
     requests.post(TELEGRAM_API_URL, data=payload)
 
 def main():
+    # 初始化状态文件
+    if not Path(LAST_VERSIONS_FILE).exists():
+        with open(LAST_VERSIONS_FILE, 'w') as f:
+            json.dump({}, f)
     # 加载配置
     config = load_json_file(CONFIG_FILE)
     app_ids = config.get('apps', [])
