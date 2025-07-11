@@ -58,27 +58,28 @@ def get_game_updates(appid):
     }
 
 def format_message(updates, is_first_time=False):
-    """格式化消息内容，按发布时间排序（旧的在前，新的在后）"""
-    # 将更新按发布时间从旧到新排序
+    """格式化消息内容，严格按时间排序（旧→新）且无空行"""
+    # 按发布时间从旧到新排序
     sorted_updates = sorted(
         updates.items(),
         key=lambda x: x[1]['published_parsed']
     )
     
-    message = "```\n"  # 开始代码块（黑底效果）
-    message += "本次更新游戏列表\n\n" if not is_first_time else "新增监控游戏列表\n\n"
+    # 构建消息内容（紧凑格式）
+    message = "```\n"  # 开始黑底代码块
+    message += "新增监控游戏列表\n" if is_first_time else "本次更新游戏列表\n"
     
     for appid, update in sorted_updates:
         # 格式化日期时间
         formatted_date = update['published_parsed'].strftime('%Y/%m/%d %H:%M')
         
-        # 提取游戏名称
-        title_parts = update['title'].split(' for ')
-        game_name = title_parts[0] if len(title_parts) > 1 else update['title']
+        # 提取纯净游戏名（移除'for XXX'后缀）
+        game_name = update['title'].split(' for ')[0]
         
+        # 紧凑格式：无空行
         message += f"[GAME][{appid}] {game_name} ({update['build_id']}) {formatted_date}\n"
     
-    message += "```"  # 结束代码块
+    message += "```"  # 结束黑底代码块
     return message
 
 def send_telegram_message(message):
