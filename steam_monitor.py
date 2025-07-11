@@ -31,20 +31,12 @@ class SteamMonitor:
             return {}
 
     def save_state(self):
-        """增强版状态保存"""
+        """增强版状态保存（修复路径问题）"""
         try:
-            # 确保目录存在
-            os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-            
-            # 原子化写入（避免写入中途失败）
-            temp_file = f"{STATE_FILE}.tmp"
-            with open(temp_file, 'w', encoding='utf-8') as f:
+            # 直接写入当前目录，不再尝试创建目录
+            with open(STATE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.known_versions, f, indent=2, ensure_ascii=False)
-            
-            # 重命名确保完整性
-            os.replace(temp_file, STATE_FILE)
-            print(f"状态已保存到 {os.path.abspath(STATE_FILE)}")
-            
+            print(f"状态已保存到 {Path(STATE_FILE).absolute()}")
         except Exception as e:
             print(f"保存状态失败: {str(e)}")
             raise
@@ -144,5 +136,7 @@ class SteamMonitor:
             self.save_state()
 
 if __name__ == "__main__":
+    print(f"当前工作目录: {os.getcwd()}")
+    print(f"状态文件将保存到: {Path(STATE_FILE).absolute()}")
     monitor = SteamMonitor()
     monitor.run()
