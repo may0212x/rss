@@ -1,2 +1,0 @@
-steam>=1.4.0
-python-telegram-bot>=20.0
