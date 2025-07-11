@@ -1,140 +1,133 @@
 import os
 import json
 import feedparser
-from datetime import datetime
 import requests
-from pathlib import Path
+from datetime import datetime
 from dateutil import parser
+from pathlib import Path
 
-# 配置文件路径
+# 配置常量
 CONFIG_FILE = "apps_to_monitor.json"
-LAST_VERSIONS_FILE = "last_known_versions.json"
-STEAM_DB_RSS_URL = "https://steamdb.info/api/PatchnotesRSS/?appid={}"
+STATE_FILE = "last_known_versions.json"
+STEAM_DB_URL = "https://steamdb.info/api/PatchnotesRSS/?appid={}"
+TELEGRAM_API = f"https://api.telegram.org/bot{os.getenv('TELEGRAM_BOT_TOKEN')}/sendMessage"
+TELEGRAM_CHAT = os.getenv('TELEGRAM_CHAT_ID')
 
-# Telegram 配置
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{os.getenv('TELEGRAM_BOT_TOKEN')}/sendMessage"
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+class SteamMonitor:
+    def __init__(self):
+        self.known_versions = self.load_state()
+        self.new_updates = {}
+        self.first_time_updates = {}
 
-def load_json_file(filename):
-    """加载 JSON 文件"""
-    try:
-        if Path(filename).exists():
-            with open(filename, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
-    except (json.JSONDecodeError, FileNotFoundError):
-        return {}
+    def load_state(self):
+        """加载已知版本状态"""
+        try:
+            if Path(STATE_FILE).exists():
+                with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            return {}
+        except Exception as e:
+            print(f"加载状态失败: {e}")
+            return {}
 
-def save_json_file(filename, data):
-    """保存数据到 JSON 文件"""
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    def save_state(self):
+        """保存当前状态"""
+        try:
+            with open(STATE_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.known_versions, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"保存状态失败: {e}")
 
-def get_game_updates(appid):
-    """从 SteamDB 获取游戏更新信息"""
-    url = STEAM_DB_RSS_URL.format(appid)
-    feed = feedparser.parse(url)
-    
-    if not feed.entries:
-        return None
-    
-    latest_update = feed.entries[0]
-    return {
-        'title': latest_update.title,
-        'link': latest_update.link,
-        'published': latest_update.published,
-        'published_parsed': parser.parse(latest_update.published),
-        'build_id': latest_update.link.split('/')[-2]
-    }
+    def get_game_update(self, appid):
+        """获取游戏更新信息"""
+        try:
+            feed = feedparser.parse(STEAM_DB_URL.format(appid))
+            if not feed.entries:
+                return None
 
-def format_message(updates, is_first_time=False):
-    """格式化消息内容（紧凑格式+黑底）"""
-    # 按发布时间从旧到新排序
-    sorted_updates = sorted(
-        updates.items(),
-        key=lambda x: x[1]['published_parsed']
-    )
-    
-    message = "```\n"  # 开始黑底代码块
-    message += "新增监控游戏列表\n" if is_first_time else "本次更新游戏列表\n"
-    
-    for appid, update in sorted_updates:
-        # 格式化日期时间
-        formatted_date = update['published_parsed'].strftime('%Y/%m/%d %H:%M')
-        
-        # 提取纯净游戏名（移除'for XXX'后缀）
-        game_name = update['title'].split(' for ')[0]
-        
-        # 紧凑格式：无空行
-        message += f"[GAME][{appid}] {game_name} ({update['build_id']}) {formatted_date}\n"
-    
-    message += "```"  # 结束黑底代码块
-    return message
-
-def send_telegram_message(message):
-    """发送 Telegram 通知"""
-    payload = {
-        'chat_id': TELEGRAM_CHAT_ID,
-        'text': message,
-        'parse_mode': 'MarkdownV2'
-    }
-    try:
-        response = requests.post(TELEGRAM_API_URL, data=payload)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        print(f"Telegram发送失败: {str(e)}")
-
-def main():
-    # 加载配置
-    config = load_json_file(CONFIG_FILE)
-    app_ids = config.get('apps', [])
-    
-    # 加载上次已知的版本（从缓存文件）
-    last_versions = load_json_file(LAST_VERSIONS_FILE)
-    
-    new_updates = {}
-    first_time_updates = {}
-    has_changes = False
-    
-    for appid in app_ids:
-        update = get_game_updates(appid)
-        if not update:
-            continue
-            
-        appid_str = str(appid)
-        
-        # 首次监控的游戏
-        if appid_str not in last_versions:
-            last_versions[appid_str] = {
-                'title': update['title'],
-                'link': update['link'],
-                'published': update['published'],
-                'build_id': update['build_id']
+            entry = feed.entries[0]
+            return {
+                'title': entry.title.split(' for ')[0],  # 移除"for platform"后缀
+                'link': entry.link,
+                'published': entry.published,
+                'timestamp': parser.parse(entry.published),
+                'build_id': entry.link.split('/')[-2]
             }
-            first_time_updates[appid] = update
-            has_changes = True
-            continue
-            
-        # 检查是否有新版本
-        if update['build_id'] != last_versions[appid_str]['build_id']:
-            new_updates[appid] = update
-            last_versions[appid_str] = {
-                'title': update['title'],
-                'link': update['link'],
-                'published': update['published'],
-                'build_id': update['build_id']
-            }
-            has_changes = True
-    
-    # 发送通知
-    if first_time_updates:
-        send_telegram_message(format_message(first_time_updates, is_first_time=True))
-    if new_updates:
-        send_telegram_message(format_message(new_updates))
-    
-    # 保存状态到缓存文件
-    if has_changes:
-        save_json_file(LAST_VERSIONS_FILE, last_versions)
+        except Exception as e:
+            print(f"获取游戏{appid}更新失败: {e}")
+            return None
+
+    def check_updates(self):
+        """检查所有游戏的更新状态"""
+        app_ids = self.load_config()
+        for appid in app_ids:
+            update = self.get_game_update(appid)
+            if not update:
+                continue
+
+            appid_str = str(appid)
+            if appid_str not in self.known_versions:
+                self.first_time_updates[appid] = update
+                self.known_versions[appid_str] = self._sanitize_update(update)
+            elif update['build_id'] != self.known_versions[appid_str]['build_id']:
+                self.new_updates[appid] = update
+                self.known_versions[appid_str] = self._sanitize_update(update)
+
+    def _sanitize_update(self, update):
+        """准备可序列化的更新数据"""
+        return {
+            'title': update['title'],
+            'link': update['link'],
+            'published': update['published'],
+            'build_id': update['build_id']
+        }
+
+    def load_config(self):
+        """加载监控配置"""
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f).get('apps', [])
+        except Exception as e:
+            print(f"加载配置失败: {e}")
+            return []
+
+    def send_notification(self):
+        """发送Telegram通知"""
+        if self.first_time_updates:
+            self._send_telegram(self._format_updates(self.first_time_updates, "新增监控游戏列表"))
+        if self.new_updates:
+            self._send_telegram(self._format_updates(self.new_updates, "本次更新游戏列表"))
+
+    def _format_updates(self, updates, title):
+        """格式化更新信息"""
+        sorted_updates = sorted(updates.items(), key=lambda x: x[1]['timestamp'])
+        message = [f"```\n{title}"]
+        for appid, update in sorted_updates:
+            time_str = update['timestamp'].strftime('%Y/%m/%d %H:%M')
+            message.append(
+                f"[GAME][{appid}] {update['title']} ({update['build_id']}) {time_str}"
+            )
+        message.append("```")
+        return '\n'.join(message)
+
+    def _send_telegram(self, message):
+        """发送到Telegram"""
+        try:
+            response = requests.post(
+                TELEGRAM_API,
+                data={'chat_id': TELEGRAM_CHAT, 'text': message, 'parse_mode': 'MarkdownV2'}
+            )
+            response.raise_for_status()
+        except Exception as e:
+            print(f"Telegram发送失败: {e}")
+
+    def run(self):
+        """主运行逻辑"""
+        self.check_updates()
+        if self.first_time_updates or self.new_updates:
+            self.send_notification()
+            self.save_state()
 
 if __name__ == "__main__":
-    main()
+    monitor = SteamMonitor()
+    monitor.run()
