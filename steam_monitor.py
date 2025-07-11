@@ -31,12 +31,23 @@ class SteamMonitor:
             return {}
 
     def save_state(self):
-        """保存当前状态"""
-        try:
-            with open(STATE_FILE, 'w', encoding='utf-8') as f:
-                json.dump(self.known_versions, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"保存状态失败: {e}")
+    """增强版状态保存"""
+    try:
+        # 确保目录存在
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        
+        # 原子化写入（避免写入中途失败）
+        temp_file = f"{STATE_FILE}.tmp"
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(self.known_versions, f, indent=2)
+        
+        # 重命名确保完整性
+        os.replace(temp_file, STATE_FILE)
+        print(f"状态已保存到 {os.path.abspath(STATE_FILE)}")
+        
+    except Exception as e:
+        print(f"保存状态失败: {str(e)}")
+        raise
 
     def get_game_update(self, appid):
         """获取游戏更新信息"""
