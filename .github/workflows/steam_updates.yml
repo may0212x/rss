@@ -1,41 +1,70 @@
-name: Steam游戏监控
+name: Steam游戏更新监控
 
 on:
   schedule:
-    - cron: '0 */12 * * *'
-  workflow_dispatch:
+    - cron: '0 */12 * * *'  # 每12小时检查一次（UTC时间）
+  workflow_dispatch:        # 允许手动触发
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # 需要写入权限
 
     steps:
-    - uses: actions/checkout@v4
+    # 步骤1：检出代码
+    - name: 检出仓库
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整提交历史
 
+    # 步骤2：设置Python环境
     - name: 设置Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
+    # 步骤3：安装依赖
     - name: 安装依赖
-      run: pip install feedparser requests python-dateutil
+      run: |
+        python -m pip install --upgrade pip
+        pip install feedparser requests python-dateutil
+        echo "验证安装："
+        pip show feedparser requests python-dateutil
 
+    # 步骤4：缓存状态管理（核心改进）
+    - name: 恢复状态缓存
+      uses: actions/cache@v3
+      id: state-cache
+      with:
+        path: last_known_versions.json
+        key: steam-state-${{ github.sha }}
+        restore-keys: |
+          steam-state-
+
+    # 步骤5：初始化状态文件
     - name: 初始化状态
       run: |
         if [ ! -f last_known_versions.json ]; then
           echo "{}" > last_known_versions.json
+          echo "已初始化状态文件"
+        else
+          echo "状态文件已存在"
         fi
+        echo "当前状态内容："
+        cat last_known_versions.json || echo "空文件"
 
+    # 步骤6：运行监控脚本
     - name: 运行监控
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python steam_monitor.py
 
-    - name: 保存状态
-      uses: actions/cache@v3
+    # 步骤7：保存状态到缓存
+    - name: 保存缓存
+      uses: actions/cache/save@v3
+      if: always()  # 即使失败也尝试保存
       with:
         path: last_known_versions.json
-        key: steam-state-${{ github.run_id }}
+        key: ${{ steps.state-cache.outputs.cache-primary-key }}
