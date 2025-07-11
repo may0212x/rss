@@ -12,31 +12,32 @@ jobs:
       contents: write
 
     steps:
-    # 步骤1：全新检出（关键修改点）
+    # 步骤1：检出代码（不保留历史）
     - name: 检出代码
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0
-        clean: "true"  # 确保每次都是全新工作区
+        fetch-depth: 1  # 仅拉取最新提交
 
-    # 步骤2：初始化版本文件
-    - name: 初始化状态文件
+    # 步骤2：使用GitHub缓存存储状态（关键创新点）
+    - name: 恢复状态
+      id: restore-state
+      uses: actions/cache@v3
+      with:
+        path: last_known_versions.json
+        key: steam-versions-${{ hashFiles('apps_to_monitor.json') }}
+
+    # 步骤3：初始化状态文件
+    - name: 初始化
       run: |
         if [ ! -f last_known_versions.json ]; then
           echo "{}" > last_known_versions.json
-          git add last_known_versions.json
-          git commit -m "初始化版本跟踪文件" || echo "文件已存在"
         fi
 
-    # 步骤3：设置环境
+    # 步骤4：设置环境
     - name: 设置Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-
-    # 步骤4：安装依赖
-    - name: 安装依赖
-      run: pip install feedparser requests python-dateutil
 
     # 步骤5：运行监控
     - name: 执行监控
@@ -45,24 +46,11 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python steam_monitor.py
 
-    # 步骤6：安全提交（终极方案）
-    - name: 提交变更
-      run: |
-        # 配置Git
-        git config --global user.name "GitHub Actions"
-        git config --global user.email "actions@github.com"
-        
-        # 创建新分支提交
-        git checkout -b temp-$(date +%s)
-        git add .
-        
-        if ! git diff --cached --quiet; then
-          git commit -m "更新游戏版本状态 $(date +'%Y-%m-%d %H:%M') [skip ci]"
-          
-          # 切回主分支并合并
-          git checkout main
-          git pull origin main
-          git merge --no-ff --no-commit temp-*
-          git commit -m "合并版本更新 [skip ci]"
-          git push origin main
-        fi
+    # 步骤6：保存状态到缓存
+    - name: 保存状态
+      uses: actions/cache@v3
+      with:
+        path: last_known_versions.json
+        key: steam-versions-${{ hashFiles('apps_to_monitor.json') }}
+        restore-keys: |
+          steam-versions-
