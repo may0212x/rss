@@ -1,4 +1,4 @@
-name: Steam监控增强版
+name: Steam游戏监控
 
 on:
   schedule:
@@ -22,19 +22,10 @@ jobs:
     - name: 安装依赖
       run: pip install feedparser requests python-dateutil
 
-    - name: 恢复状态
-      uses: actions/cache@v3
-      id: cache
-      with:
-        path: last_known_versions.json
-        key: steam-state-${{ github.run_id }}
-        restore-keys: steam-state-
-
     - name: 初始化状态
       run: |
         if [ ! -f last_known_versions.json ]; then
           echo "{}" > last_known_versions.json
-          echo "已初始化状态文件"
         fi
 
     - name: 运行监控
@@ -45,7 +36,6 @@ jobs:
 
     - name: 保存状态
       uses: actions/cache@v3
-      if: always()  # 即使失败也尝试保存
       with:
         path: last_known_versions.json
         key: steam-state-${{ github.run_id }}
