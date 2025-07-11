@@ -2,8 +2,8 @@ name: Steam游戏更新监控
 
 on:
   schedule:
-    - cron: '0 */12 * * *'  # 每12小时UTC时间检查一次
-  workflow_dispatch:        # 允许手动触发
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
 
 jobs:
   monitor:
@@ -12,51 +12,32 @@ jobs:
       contents: write
 
     steps:
-    # 步骤1：检出代码
-    - name: 检出仓库
+    - name: 检出代码
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
-    # 步骤2：设置Python环境（跳过依赖检测）
     - name: 设置Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-        cache-dependency-path: ""  # 关键修复：禁用自动依赖检测
+        cache-dependency-path: ""
 
-    # 步骤3：直接安装所需依赖
     - name: 安装依赖
-      run: |
-        python -m pip install --upgrade pip
-        pip install feedparser requests python-dateutil
-        echo "依赖安装完成"
+      run: pip install feedparser requests python-dateutil
 
-    # 步骤4：运行监控脚本
-    - name: 执行监控
+    - name: 运行监控
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python steam_monitor.py
 
-    # 步骤5：智能同步变更
-    - name: 提交并推送
+    - name: 提交变更
+      if: success()
       run: |
-        # 配置Git
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
-        
-        # 添加变更
         git add .
-        
-        # 检查是否有实际变更
         if ! git diff --cached --quiet; then
-          # 提交变更
-          git commit -m "自动更新游戏版本状态 [skip ci]"
-          
-          # 安全推送（带冲突解决）
-          git pull --rebase origin main
-          git push origin main
-        else
-          echo "没有检测到变更"
+          git commit -m "更新游戏版本状态 [skip ci]"
+          git pull --rebase
+          git push
         fi
