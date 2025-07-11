@@ -12,46 +12,57 @@ jobs:
       contents: write
 
     steps:
-    - name: 检出代码（全新状态）
+    # 步骤1：全新检出（关键修改点）
+    - name: 检出代码
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        clean: true  # 关键参数：确保全新检出
+        clean: "true"  # 确保每次都是全新工作区
 
+    # 步骤2：初始化版本文件
+    - name: 初始化状态文件
+      run: |
+        if [ ! -f last_known_versions.json ]; then
+          echo "{}" > last_known_versions.json
+          git add last_known_versions.json
+          git commit -m "初始化版本跟踪文件" || echo "文件已存在"
+        fi
+
+    # 步骤3：设置环境
     - name: 设置Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
 
+    # 步骤4：安装依赖
     - name: 安装依赖
       run: pip install feedparser requests python-dateutil
 
-    - name: 运行监控
+    # 步骤5：运行监控
+    - name: 执行监控
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: |
-        # 确保状态文件存在
-        if [ ! -f last_known_versions.json ]; then
-          echo "{}" > last_known_versions.json
-        fi
-        python steam_monitor.py
+      run: python steam_monitor.py
 
-    - name: 提交变更（冲突安全处理）
+    # 步骤6：安全提交（终极方案）
+    - name: 提交变更
       run: |
+        # 配置Git
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         
-        # 强制同步远程
-        git fetch origin
-        git reset --hard origin/main
-        
-        # 添加变更
+        # 创建新分支提交
+        git checkout -b temp-$(date +%s)
         git add .
+        
         if ! git diff --cached --quiet; then
-          # 创建新提交（覆盖历史）
           git commit -m "更新游戏版本状态 $(date +'%Y-%m-%d %H:%M') [skip ci]"
           
-          # 强制推送（仅限版本文件）
-          git push origin main --force
+          # 切回主分支并合并
+          git checkout main
+          git pull origin main
+          git merge --no-ff --no-commit temp-*
+          git commit -m "合并版本更新 [skip ci]"
+          git push origin main
         fi
