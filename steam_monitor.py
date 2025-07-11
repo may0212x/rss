@@ -22,23 +22,13 @@ def load_json_file(filename):
             with open(filename, 'r', encoding='utf-8') as f:
                 return json.load(f)
         return {}
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, FileNotFoundError):
         return {}
 
 def save_json_file(filename, data):
     """保存数据到 JSON 文件"""
-    # 转换 datetime 对象为字符串
-    serializable_data = {}
-    for appid, update in data.items():
-        serializable_data[appid] = {
-            'title': update['title'],
-            'link': update['link'],
-            'published': update['published'],
-            'build_id': update['build_id']
-        }
-    
     with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(serializable_data, f, indent=2, ensure_ascii=False)
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 def get_game_updates(appid):
     """从 SteamDB 获取游戏更新信息"""
@@ -58,14 +48,13 @@ def get_game_updates(appid):
     }
 
 def format_message(updates, is_first_time=False):
-    """格式化消息内容，严格按时间排序（旧→新）且无空行"""
+    """格式化消息内容（紧凑格式+黑底）"""
     # 按发布时间从旧到新排序
     sorted_updates = sorted(
         updates.items(),
         key=lambda x: x[1]['published_parsed']
     )
     
-    # 构建消息内容（紧凑格式）
     message = "```\n"  # 开始黑底代码块
     message += "新增监控游戏列表\n" if is_first_time else "本次更新游戏列表\n"
     
@@ -89,16 +78,18 @@ def send_telegram_message(message):
         'text': message,
         'parse_mode': 'MarkdownV2'
     }
-    requests.post(TELEGRAM_API_URL, data=payload)
+    try:
+        response = requests.post(TELEGRAM_API_URL, data=payload)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Telegram发送失败: {str(e)}")
 
 def main():
-    # 初始化状态文件
-    if not Path(LAST_VERSIONS_FILE).exists():
-        with open(LAST_VERSIONS_FILE, 'w') as f:
-            json.dump({}, f)
     # 加载配置
     config = load_json_file(CONFIG_FILE)
     app_ids = config.get('apps', [])
+    
+    # 加载上次已知的版本（从缓存文件）
     last_versions = load_json_file(LAST_VERSIONS_FILE)
     
     new_updates = {}
@@ -114,15 +105,25 @@ def main():
         
         # 首次监控的游戏
         if appid_str not in last_versions:
-            last_versions[appid_str] = update
+            last_versions[appid_str] = {
+                'title': update['title'],
+                'link': update['link'],
+                'published': update['published'],
+                'build_id': update['build_id']
+            }
             first_time_updates[appid] = update
             has_changes = True
             continue
             
-        # 检查新版本
+        # 检查是否有新版本
         if update['build_id'] != last_versions[appid_str]['build_id']:
             new_updates[appid] = update
-            last_versions[appid_str] = update
+            last_versions[appid_str] = {
+                'title': update['title'],
+                'link': update['link'],
+                'published': update['published'],
+                'build_id': update['build_id']
+            }
             has_changes = True
     
     # 发送通知
@@ -131,7 +132,7 @@ def main():
     if new_updates:
         send_telegram_message(format_message(new_updates))
     
-    # 保存状态
+    # 保存状态到缓存文件
     if has_changes:
         save_json_file(LAST_VERSIONS_FILE, last_versions)
 
