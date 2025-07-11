@@ -9,11 +9,15 @@ jobs:
   monitor:
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: write  # 添加写入权限
+    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0  # 获取完整提交历史
+        token: ${{ secrets.GITHUB_TOKEN }}  # 使用GITHUB_TOKEN认证
         
     - name: Set up Python
       uses: actions/setup-python@v5
