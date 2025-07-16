@@ -2,7 +2,7 @@ import os
 import json
 import feedparser
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dateutil import parser
 from pathlib import Path
 
@@ -131,7 +131,9 @@ class SteamMonitor:
         message.append(title)
         
         for appid, update in sorted_updates:
-            time_str = update['timestamp'].strftime('%Y/%m/%d %H:%M')
+            # 转换为香港时间（UTC+8）
+            hk_time = update['timestamp'].astimezone(timezone(timedelta(hours=8)))
+            time_str = hk_time.strftime('%Y/%m/%d %H:%M')
             message.append(
                 f"[GAME][{appid}] {update['title']} ({update['build_id']}) {time_str}"
             )
