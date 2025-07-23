@@ -2,8 +2,9 @@ import os
 import json
 import feedparser
 import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from dateutil import parser
+import pytz
 from pathlib import Path
 
 # 配置常量
@@ -17,8 +18,8 @@ class SteamMonitor:
     def __init__(self):
         print("\n===== 初始化监控器 =====")
         print(f"工作目录: {os.getcwd()}")
-        print(f"状态文件路径: {Path(STATE_FILE).absolute()}")
         
+        self.hk_tz = pytz.timezone('Asia/Hong_Kong')
         self.known_versions = self.load_state()
         self.new_updates = {}
         self.first_time_updates = {}
@@ -50,7 +51,7 @@ class SteamMonitor:
             raise
 
     def get_game_update(self, appid):
-        """从SteamDB获取游戏更新"""
+        """从SteamDB获取游戏更新（带香港时间转换）"""
         try:
             url = STEAM_DB_URL.format(appid)
             feed = feedparser.parse(url)
@@ -60,11 +61,14 @@ class SteamMonitor:
                 return None
 
             entry = feed.entries[0]
+            utc_time = parser.parse(entry.published)
+            hk_time = utc_time.astimezone(self.hk_tz)
+            
             return {
-                'title': entry.title.split(' for ')[0],
+                'title': entry.title.split(' for ')[0].replace(' update', ''),
                 'link': entry.link,
                 'published': entry.published,
-                'timestamp': parser.parse(entry.published),
+                'timestamp': hk_time,
                 'build_id': entry.link.split('/')[-2]
             }
         except Exception as e:
@@ -96,7 +100,7 @@ class SteamMonitor:
     def _sanitize_update(self, update):
         """准备可序列化的更新数据"""
         return {
-            'title': update['title'],
+            'title': update['title'].replace(' update', ''),
             'link': update['link'],
             'published': update['published'],
             'build_id': update['build_id']
@@ -114,7 +118,7 @@ class SteamMonitor:
             return []
 
     def send_notification(self):
-        """发送Telegram通知"""
+        """发送Telegram通知（香港时间）"""
         if self.first_time_updates:
             self._send_telegram(
                 self._format_updates(self.first_time_updates, "🎮 新增监控游戏列表")
@@ -125,17 +129,15 @@ class SteamMonitor:
             )
 
     def _format_updates(self, updates, title):
-        """格式化消息内容"""
+        """格式化消息内容（香港时间）"""
         sorted_updates = sorted(updates.items(), key=lambda x: x[1]['timestamp'])
         message = ["```"]
         message.append(title)
         
         for appid, update in sorted_updates:
-            # 转换为香港时间（UTC+8）
-            hk_time = update['timestamp'].astimezone(timezone(timedelta(hours=8)))
-            time_str = hk_time.strftime('%Y/%m/%d %H:%M')
+            hk_time_str = update['timestamp'].strftime('%Y/%m/%d %H:%M')
             message.append(
-                f"[GAME][{appid}] {update['title']} ({update['build_id']}) {time_str}"
+                f"[GAME][{appid}] {update['title']} ({update['build_id']}) {hk_time_str}"
             )
         
         message.append("```")
