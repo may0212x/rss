@@ -16,20 +16,15 @@ TELEGRAM_CHAT = os.getenv('TELEGRAM_CHAT_ID')
 
 class SteamMonitor:
     def __init__(self):
-    print("\n===== 初始化监控器 =====")
-    print(f"工作目录: {os.getcwd()}")
-    
-    self.hk_tz = pytz.timezone('Asia/Hong_Kong')
-    
-    # 確保狀態文件路徑正確
-    self.STATE_FILE = os.path.join(os.getcwd(), "last_known_versions.json")
-    print(f"狀態文件路徑: {self.STATE_FILE}")
-    
-    self.known_versions = self.load_state()
-    self.new_updates = {}
-    self.first_time_updates = {}
-    
-    print(f"已加载 {len(self.known_versions)} 个游戏状态\n")
+        print("\n===== 初始化监控器 =====")
+        print(f"工作目录: {os.getcwd()}")
+        
+        self.hk_tz = pytz.timezone('Asia/Hong_Kong')
+        self.known_versions = self.load_state()
+        self.new_updates = {}
+        self.first_time_updates = {}
+        
+        print(f"已加载 {len(self.known_versions)} 个游戏状态\n")
 
     def load_state(self):
         """加载已知版本状态"""
