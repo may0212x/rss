@@ -2,8 +2,7 @@ name: Steam游戏更新监控
 
 on:
   schedule:
-    # 每6小时运行一次（UTC时间）
-    - cron: '0 */6 * * *'  # 关键修改处：将 */12 改为 */6
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -25,17 +24,6 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install feedparser requests python-dateutil pytz
-        echo "验证安装："
-        pip show feedparser requests pytz
-
-    - name: 恢复状态缓存
-      uses: actions/cache@v3
-      id: state-cache
-      with:
-        path: last_known_versions.json
-        key: steam-state-${{ github.sha }}
-        restore-keys: |
-          steam-state-
 
     - name: 运行监控
       env:
@@ -43,8 +31,11 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python steam_monitor.py
 
-    - name: 保存缓存
-      uses: actions/cache/save@v3
-      with:
-        path: last_known_versions.json
-        key: ${{ steps.state-cache.outputs.cache-primary-key }}
+    - name: 提交状态变更
+      if: always()  # 确保即使前面的步骤失败也会运行
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add last_known_versions.json
+        git commit -m "Update game monitoring state" || echo "No changes to commit"
+        git push
