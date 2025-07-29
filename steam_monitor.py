@@ -41,8 +41,12 @@ class SteamMonitor:
             return {}
 
     def save_state(self):
-        """保存状态到文件"""
+        """保存状态到文件（无论是否有更新都保存）"""
         try:
+            # 添加最后检查时间戳
+            for appid in self.known_versions:
+                self.known_versions[appid]['last_checked'] = datetime.now(self.hk_tz).isoformat()
+                
             with open(STATE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.known_versions, f, indent=2, ensure_ascii=False)
             print(f"\n✅ 状态已保存（{len(self.known_versions)}条记录）")
@@ -103,7 +107,8 @@ class SteamMonitor:
             'title': update['title'].replace(' update', ''),
             'link': update['link'],
             'published': update['published'],
-            'build_id': update['build_id']
+            'build_id': update['build_id'],
+            'last_checked': datetime.now(self.hk_tz).isoformat()  # 添加最后检查时间
         }
 
     def load_config(self):
@@ -166,9 +171,9 @@ class SteamMonitor:
         self.check_updates()
         if self.first_time_updates or self.new_updates:
             self.send_notification()
-            self.save_state()
-        else:
-            print("\nℹ️ 未检测到新更新")
+        # 无论是否有更新都保存状态
+        self.save_state()
+        print("\n操作完成")
 
 if __name__ == "__main__":
     monitor = SteamMonitor()
