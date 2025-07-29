@@ -2,20 +2,33 @@ name: Steam游戏更新监控
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # 每6小时运行一次（UTC时间）
-  workflow_dispatch:
+    - cron: '0 */4 * * *'  # 每4小时运行一次（UTC时间）
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # 允许提交更改
 
     steps:
     - name: 检出仓库
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整历史记录
 
-    - name: 设置Python
+    - name: 初始化状态文件
+      run: |
+        if [ ! -f "last_known_versions.json" ]; then
+          echo "{}" > last_known_versions.json
+          echo "已创建初始状态文件"
+        else
+          echo "状态文件已存在"
+        fi
+        echo "当前目录内容:"
+        ls -la
+
+    - name: 设置Python环境
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
@@ -24,27 +37,22 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install feedparser requests python-dateutil pytz
-        echo "验证安装："
-        pip show feedparser requests pytz
+        echo "已安装依赖:"
+        pip list
 
-    - name: 恢复状态缓存
-      uses: actions/cache@v3
-      id: state-cache
-      with:
-        path: last_known_versions.json
-        key: steam-state-${{ hashFiles('apps_to_monitor.json') }}  # 使用配置文件哈希作为键
-        restore-keys: |
-          steam-state-
-
-    - name: 运行监控
+    - name: 运行监控脚本
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python steam_monitor.py
+      run: |
+        python steam_monitor.py
+        echo "状态文件内容:"
+        cat last_known_versions.json || echo "无状态文件"
 
-    - name: 保存状态缓存
-      if: always()  # 无论上一步是否失败都执行保存
-      uses: actions/cache/save@v3
-      with:
-        path: last_known_versions.json
-        key: ${{ steps.state-cache.outputs.cache-primary-key }}
+    - name: 提交状态更新
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add last_known_versions.json
+        git diff-index --quiet HEAD || git commit -m "更新游戏状态 [skip ci]"
+        git push
