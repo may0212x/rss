@@ -16,8 +16,12 @@ TELEGRAM_CHAT = os.getenv('TELEGRAM_CHAT_ID')
 
 class SteamMonitor:
     def __init__(self):
-        print("\n===== 初始化监控器 =====")
+        print("\n===== Steam游戏更新监控器 =====")
+        print(f"当前时间: {datetime.now(pytz.timezone('Asia/Hong_Kong')).strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"工作目录: {os.getcwd()}")
+        
+        # 确保状态文件存在
+        self._ensure_state_file()
         
         self.hk_tz = pytz.timezone('Asia/Hong_Kong')
         self.known_versions = self.load_state()
@@ -26,36 +30,37 @@ class SteamMonitor:
         
         print(f"已加载 {len(self.known_versions)} 个游戏状态\n")
 
+    def _ensure_state_file(self):
+        """确保状态文件存在"""
+        if not Path(STATE_FILE).exists():
+            print(f"⚠️ 状态文件不存在，正在创建: {STATE_FILE}")
+            with open(STATE_FILE, 'w', encoding='utf-8') as f:
+                json.dump({}, f, indent=2)
+
     def load_state(self):
         """加载已知版本状态"""
         try:
-            if Path(STATE_FILE).exists():
-                with open(STATE_FILE, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    print(f"从缓存加载状态成功（{len(data)}条记录）")
-                    return data
-            print("无现有状态文件，将创建新记录")
-            return {}
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                print(f"✅ 从 {STATE_FILE} 加载状态成功（{len(data)}条记录）")
+                return data
         except Exception as e:
-            print(f"⚠️ 加载状态失败: {e}")
+            print(f"❌ 加载状态失败: {e}")
+            print("⚠️ 将使用空状态继续运行")
             return {}
 
     def save_state(self):
-        """保存状态到文件（无论是否有更新都保存）"""
+        """保存状态到文件"""
         try:
-            # 添加最后检查时间戳
-            for appid in self.known_versions:
-                self.known_versions[appid]['last_checked'] = datetime.now(self.hk_tz).isoformat()
-                
             with open(STATE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.known_versions, f, indent=2, ensure_ascii=False)
-            print(f"\n✅ 状态已保存（{len(self.known_versions)}条记录）")
+            print(f"✅ 状态已保存到 {STATE_FILE}（{len(self.known_versions)}条记录）")
         except Exception as e:
             print(f"❌ 保存状态失败: {e}")
             raise
 
     def get_game_update(self, appid):
-        """从SteamDB获取游戏更新（带香港时间转换）"""
+        """从SteamDB获取游戏更新"""
         try:
             url = STEAM_DB_URL.format(appid)
             feed = feedparser.parse(url)
@@ -79,38 +84,6 @@ class SteamMonitor:
             print(f"❌ 获取游戏 {appid} 更新失败: {e}")
             return None
 
-    def check_updates(self):
-        """检查所有游戏更新"""
-        app_ids = self.load_config()
-        print(f"开始检查 {len(app_ids)} 个游戏...")
-        
-        for idx, appid in enumerate(app_ids, 1):
-            update = self.get_game_update(appid)
-            if not update:
-                continue
-
-            appid_str = str(appid)
-            if appid_str not in self.known_versions:
-                print(f"[{idx}/{len(app_ids)}] 新增游戏: {update['title']} (ID: {appid})")
-                self.first_time_updates[appid] = update
-                self.known_versions[appid_str] = self._sanitize_update(update)
-            elif update['build_id'] != self.known_versions[appid_str]['build_id']:
-                print(f"[{idx}/{len(app_ids)}] 发现更新: {update['title']} (新版本: {update['build_id']})")
-                self.new_updates[appid] = update
-                self.known_versions[appid_str] = self._sanitize_update(update)
-            else:
-                print(f"[{idx}/{len(app_ids)}] 无更新: {self.known_versions[appid_str]['title']}")
-
-    def _sanitize_update(self, update):
-        """准备可序列化的更新数据"""
-        return {
-            'title': update['title'].replace(' update', ''),
-            'link': update['link'],
-            'published': update['published'],
-            'build_id': update['build_id'],
-            'last_checked': datetime.now(self.hk_tz).isoformat()  # 添加最后检查时间
-        }
-
     def load_config(self):
         """加载监控配置"""
         try:
@@ -122,31 +95,66 @@ class SteamMonitor:
             print(f"❌ 加载配置失败: {e}")
             return []
 
+    def check_updates(self):
+        """检查所有游戏更新"""
+        app_ids = self.load_config()
+        print(f"\n开始检查 {len(app_ids)} 个游戏...")
+        
+        for idx, appid in enumerate(app_ids, 1):
+            update = self.get_game_update(appid)
+            if not update:
+                continue
+
+            appid_str = str(appid)
+            current_build = self.known_versions.get(appid_str, {}).get('build_id')
+            
+            if appid_str not in self.known_versions:
+                print(f"[{idx}/{len(app_ids)}] 🆕 新增游戏: {update['title']} (ID: {appid})")
+                self.first_time_updates[appid] = update
+                self.known_versions[appid_str] = self._sanitize_update(update)
+            elif update['build_id'] != current_build:
+                print(f"[{idx}/{len(appids)}] 🔄 发现更新: {update['title']} (版本: {current_build} → {update['build_id']})")
+                self.new_updates[appid] = update
+                self.known_versions[appid_str] = self._sanitize_update(update)
+            else:
+                print(f"[{idx}/{len(app_ids)}] ✅ 无更新: {update['title']} (当前版本: {current_build})")
+
+    def _sanitize_update(self, update):
+        """准备可序列化的更新数据"""
+        return {
+            'title': update['title'],
+            'link': update['link'],
+            'published': update['published'],
+            'build_id': update['build_id'],
+            'last_checked': datetime.now(self.hk_tz).isoformat()
+        }
+
     def send_notification(self):
-        """发送Telegram通知（香港时间）"""
+        """发送Telegram通知"""
         if self.first_time_updates:
             self._send_telegram(
-                self._format_updates(self.first_time_updates, "🎮 新增监控游戏列表")
+                self._format_updates(self.first_time_updates, "🎮 新增监控游戏")
             )
         if self.new_updates:
             self._send_telegram(
-                self._format_updates(self.new_updates, "🆕 本次更新游戏列表")
+                self._format_updates(self.new_updates, "🆕 游戏更新通知")
             )
 
     def _format_updates(self, updates, title):
-        """格式化消息内容（香港时间）"""
+        """格式化消息内容"""
         sorted_updates = sorted(updates.items(), key=lambda x: x[1]['timestamp'])
-        message = ["```"]
-        message.append(title)
+        message = [f"*{title}*", ""]
         
         for appid, update in sorted_updates:
-            hk_time_str = update['timestamp'].strftime('%Y/%m/%d %H:%M')
+            hk_time = update['timestamp'].strftime('%m/%d %H:%M')
             message.append(
-                f"[GAME][{appid}] {update['title']} ({update['build_id']}) {hk_time_str}"
+                f"▪️ [{update['title']}]({update['link']})"
+                f"\n  版本: `{update['build_id']}`"
+                f"\n  更新时间: `{hk_time}`"
+                f"\n  AppID: `{appid}`"
             )
         
-        message.append("```")
-        return '\n'.join(message)
+        return "\n".join(message)
 
     def _send_telegram(self, message):
         """发送到Telegram"""
@@ -157,7 +165,8 @@ class SteamMonitor:
                 data={
                     'chat_id': TELEGRAM_CHAT,
                     'text': message,
-                    'parse_mode': 'MarkdownV2'
+                    'parse_mode': 'Markdown',
+                    'disable_web_page_preview': True
                 },
                 timeout=10
             )
@@ -171,9 +180,8 @@ class SteamMonitor:
         self.check_updates()
         if self.first_time_updates or self.new_updates:
             self.send_notification()
-        # 无论是否有更新都保存状态
         self.save_state()
-        print("\n操作完成")
+        print("\n🏁 监控任务完成")
 
 if __name__ == "__main__":
     monitor = SteamMonitor()
