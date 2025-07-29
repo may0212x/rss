@@ -29,10 +29,13 @@ jobs:
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python steam_monitor.py
+      run: |
+        # 确保文件使用Unix换行符
+        dos2unix steam_monitor.py
+        python steam_monitor.py
 
     - name: 提交状态变更
-      if: always()  # 确保即使前面的步骤失败也会运行
+      if: always()
       run: |
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
