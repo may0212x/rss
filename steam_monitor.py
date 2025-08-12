@@ -116,11 +116,11 @@ class SteamMonitor:
         """发送Telegram通知（完全保留原格式）"""
         if self.first_time_updates:
             self._send_telegram(
-                self._format_updates(self.first_time_updates, "🎮 新增监控游戏列表")
+                self._format_updates(self.first_time_updates, "🆕新增監控遊戲列表")
             )
         if self.new_updates:
             self._send_telegram(
-                self._format_updates(self.new_updates, "🆕 本次更新游戏列表")
+                self._format_updates(self.new_updates, "本次更新遊戲列表")
             )
 
     def _format_updates(self, updates, title):
@@ -165,3 +165,4 @@ class SteamMonitor:
 if __name__ == "__main__":
     monitor = SteamMonitor()
     monitor.run()
+
